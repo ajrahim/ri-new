@@ -8,6 +8,7 @@ export interface OptionsCommon {
   videoQuality?: AndroidVideoOptions | iOSVideoOptions;
   includeBase64?: boolean;
   includeExtra?: boolean;
+  formatAsMp4?: boolean;
   presentationStyle?:
     | 'currentContext'
     | 'fullScreen'
@@ -36,6 +37,7 @@ export interface Asset {
   fileSize?: number;
   type?: string;
   fileName?: string;
+  originalName?: string;
   duration?: number;
   bitrate?: number;
   timestamp?: string;
