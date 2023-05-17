@@ -1,6 +1,7 @@
 package com.imagepicker;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ContentResolver;
@@ -15,6 +16,7 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.net.Uri;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.MimeTypeMap;
@@ -23,6 +25,7 @@ import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.FileProvider;
 import androidx.exifinterface.media.ExifInterface;
+import androidx.loader.content.CursorLoader;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReadableMap;
@@ -41,10 +44,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-import static com.imagepicker.ImagePickerModuleImpl.*;
+import static com.imagepicker.ImagePickerModule.*;
 
 public class Utils {
-    public static String fileNamePrefix = "rn_image_picker_lib_temp_";
+    public static String fileNamePrefix = "ci_";
 
     public static String errCameraUnavailable = "camera_unavailable";
     public static String errPermission = "permission";
@@ -450,6 +453,14 @@ public class Utils {
         return map;
     }
 
+    static ReadableMap getVideoResponseMap(Uri tempFileUri, String originFilePath, Options options, Context context) {
+        WritableMap videoResponseMap = (WritableMap) getVideoResponseMap(tempFileUri, options, context);
+        if (originFilePath != null) {
+            videoResponseMap.putString("originFilepath", originFilePath);
+        }
+        return videoResponseMap;
+    }
+
     static ReadableMap getResponseMap(List<Uri> fileUris, Options options, Context context) throws RuntimeException {
         WritableArray assets = Arguments.createArray();
 
@@ -459,8 +470,14 @@ public class Utils {
             // Call getAppSpecificStorageUri in the if block to avoid copying unsupported files
             if (isImageType(uri, context)) {
                 String originPath;
+                System.out.println("PROTOCOL - ORIGIN");
+                System.out.println(uri.toString());
+
                 if (uri.getScheme().contains("content")) {
+                    System.out.println("PROTOCOL - CONTAINS CONTENT");
                     originPath = getImageFilepathFromContentProtocol(uri, context);
+                    System.out.println("PROTOCOL - ORIGIN PATH");
+                    System.out.println(originPath);
                     uri = getAppSpecificStorageUri(uri, context);
                 } else {
                     originPath = uri.toString();
@@ -468,10 +485,15 @@ public class Utils {
                 uri = resizeImage(uri, context, options);
                 assets.pushMap(getImageResponseMap(uri, originPath, options, context));
             } else if (isVideoType(uri, context)) {
+                String originPath;
                 if (uri.getScheme().contains("content")) {
+                    originPath = getVideoFilepathFromContentProtocol(uri, context);
                     uri = getAppSpecificStorageUri(uri, context);
+                } else {
+                    originPath = uri.toString();
                 }
-                assets.pushMap(getVideoResponseMap(uri, options, context));
+
+                assets.pushMap(getVideoResponseMap(uri, originPath, options, context));
             } else {
                 throw new RuntimeException("Unsupported file type");
             }
@@ -483,26 +505,78 @@ public class Utils {
         return response;
     }
 
-    /**
-     * get the image filepath from the 'content' protocol.
-     * @param uri the uri.
-     * @param context the context.
-     * @return the filepath. return null when the file is not exist.
-     * <p>
-     * the return value may like this:
-     * <p>
-     * <code>/storage/emulated/0/Pictures/-4fae8f0985703cbe.jpg</code>
-     */
+    
     private static String getImageFilepathFromContentProtocol(Uri uri, Context context) {
-        String[] proj = { MediaStore.Images.Media.DATA };
-        try (Cursor cursor = context.getContentResolver().query(uri, proj, null, null, null)) {
-            int index = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
-            if (index == -1) {
-                return null;
+        if(uri.toString().contains("%3A")) {
+            String id = uri.toString().split("%3A")[1];
+            String[] column = { MediaStore.Images.Media.DATA };
+            String sel = MediaStore.Images.Media._ID + "=?";
+            try(Cursor cursor = context.getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, column, sel, new String[]{ id }, null)) {
+
+                int index = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
+                if (index == -1) {
+                    return null;
+                }
+                cursor.moveToFirst();
+                return cursor.getString(index);
             }
-            cursor.moveToFirst();
-            return cursor.getString(index);
+        }else{
+            String[] proj = { MediaStore.Images.Media.DATA };
+            try (Cursor cursor = context.getContentResolver().query(uri, proj, null, null, null)) {
+                int index = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
+                if (index == -1) {
+                    return null;
+                }
+                cursor.moveToFirst();
+                return cursor.getString(index);
+            }
         }
+    }
+
+    private static String getVideoFilepathFromContentProtocol(Uri uri, Context context) {
+        if(uri.toString().contains("%3A")) {
+            String id = uri.toString().split("%3A")[1];
+            String[] column = { MediaStore.Video.Media.DATA };
+            String sel = MediaStore.Video.Media._ID + "=?";
+            try(Cursor cursor = context.getContentResolver().query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, column, sel, new String[]{ id }, null)) {
+
+                int index = cursor.getColumnIndex(MediaStore.Video.Media.DATA);
+                if (index == -1) {
+                    return null;
+                }
+                cursor.moveToFirst();
+                return cursor.getString(index);
+            }
+        }else{
+            String[] proj = { MediaStore.Video.Media.DATA };
+            try (Cursor cursor = context.getContentResolver().query(uri, proj, null, null, null)) {
+                int index = cursor.getColumnIndex(MediaStore.Video.Media.DATA);
+                if (index == -1) {
+                    return null;
+                }
+                cursor.moveToFirst();
+                return cursor.getString(index);
+            }
+        }
+    }
+
+    private static String getPathFromMediaUri(Uri uri, Context context) {
+        String result = null;
+
+        String[] projection = { MediaStore.Images.Media.DATA };
+        Cursor cursor = context.getContentResolver().query(uri, projection, null, null, null);
+        int col = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
+        if (col >= 0 && cursor.moveToFirst())
+            result = cursor.getString(col);
+
+        for (int colm = 0; colm < cursor.getColumnCount(); colm++){
+            System.out.println("PROTOCOL - DUMP");
+            System.out.println(cursor.getString(colm));
+        }
+
+        cursor.close();
+
+        return result;
     }
 
     static ReadableMap getErrorMap(String errCode, String errMsg) {
