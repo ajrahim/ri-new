@@ -79,6 +79,7 @@ RCT_EXPORT_METHOD(launchImageLibrary:(NSDictionary *)options callback:(RCTRespon
     if (@available(iOS 14, *)) {
         if (target == library) {
             PHPickerConfiguration *configuration = [ImagePickerUtils makeConfigurationFromOptions:options target:target];
+            configuration.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCurrent;
             PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:configuration];
             picker.delegate = self;
             picker.modalPresentationStyle = [RCTConvert UIModalPresentationStyle:options[@"presentationStyle"]];
@@ -238,7 +239,7 @@ CGImagePropertyOrientation CGImagePropertyOrientationForUIImageOrientation(UIIma
     if ((target == camera) && [self.options[@"saveToPhotos"] boolValue]) {
         UISaveVideoAtPathToSavedPhotosAlbum(url.path, nil, nil, nil);
     }
-    
+//    
     if (![url.URLByResolvingSymlinksInPath.path isEqualToString:videoDestinationURL.URLByResolvingSymlinksInPath.path]) {
         NSFileManager *fileManager = [NSFileManager defaultManager];
         
@@ -263,60 +264,23 @@ CGImagePropertyOrientation CGImagePropertyOrientationForUIImageOrientation(UIIma
     }
     
     NSMutableDictionary *response = [[NSMutableDictionary alloc] init];
-    
-    if([self.options[@"formatAsMp4"] boolValue]) {
-        NSURL *parentURL = [videoDestinationURL URLByDeletingLastPathComponent];
-        NSString *path = [[parentURL.path stringByAppendingString:@"/"] stringByAppendingString:[[NSUUID UUID] UUIDString]];
-        path = [path stringByAppendingString:@".mp4"];
-        NSURL *outputURL = [NSURL fileURLWithPath:path];
-        
-        [[NSFileManager defaultManager] removeItemAtURL:outputURL error:nil];
-        AVURLAsset *asset = [AVURLAsset URLAssetWithURL:videoDestinationURL options:nil];
-        AVAssetExportSession *exportSession = [[AVAssetExportSession alloc] initWithAsset:asset presetName:AVAssetExportPresetPassthrough];
-        
-        exportSession.outputURL = outputURL;
-        exportSession.outputFileType = AVFileTypeMPEG4;
-        exportSession.shouldOptimizeForNetworkUse = YES;
-        
-        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-        
-        [exportSession exportAsynchronouslyWithCompletionHandler:^(void) {
-            if (exportSession.status == AVAssetExportSessionStatusCompleted) {
-                CGSize dimentions = [ImagePickerUtils getVideoDimensionsFromUrl:outputURL];
-                response[@"fileName"] = [outputURL lastPathComponent];
-                response[@"duration"] = [NSNumber numberWithDouble:CMTimeGetSeconds([AVAsset assetWithURL:outputURL].duration)];
-                response[@"uri"] = outputURL.absoluteString;
-                response[@"type"] = [ImagePickerUtils getFileTypeFromUrl:outputURL];
-                response[@"fileSize"] = [ImagePickerUtils getFileSizeFromUrl:outputURL];
-                response[@"width"] = @(dimentions.width);
-                response[@"height"] = @(dimentions.height);
-                
-                dispatch_semaphore_signal(sem);
-            } else if (exportSession.status == AVAssetExportSessionStatusFailed || exportSession.status == AVAssetExportSessionStatusCancelled) {
-                dispatch_semaphore_signal(sem);
-            }
-        }];
 
-        
-        dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
-    } else {
-        CGSize dimentions = [ImagePickerUtils getVideoDimensionsFromUrl:videoDestinationURL];
-        response[@"fileName"] = fileName;
-        response[@"duration"] = [NSNumber numberWithDouble:CMTimeGetSeconds([AVAsset assetWithURL:videoDestinationURL].duration)];
-        response[@"uri"] = videoDestinationURL.absoluteString;
-        response[@"type"] = [ImagePickerUtils getFileTypeFromUrl:videoDestinationURL];
-        response[@"fileSize"] = [ImagePickerUtils getFileSizeFromUrl:videoDestinationURL];
-        response[@"width"] = @(dimentions.width);
-        response[@"height"] = @(dimentions.height);
-        
-        if(phAsset){
-            response[@"timestamp"] = [self getDateTimeInUTC:phAsset.creationDate];
-            response[@"id"] = phAsset.localIdentifier;
-            NSArray *resources = [PHAssetResource assetResourcesForAsset:phAsset];
-            NSString *orgFilename = ((PHAssetResource*)resources[0]).originalFilename;
-            asset[@"originalName"] = orgFilename;
-            // Add more extra data here ...
-        }
+    CGSize dimentions = [ImagePickerUtils getVideoDimensionsFromUrl:videoDestinationURL];
+    response[@"fileName"] = fileName;
+    response[@"duration"] = [NSNumber numberWithDouble:CMTimeGetSeconds([AVAsset assetWithURL:videoDestinationURL].duration)];
+    response[@"uri"] = videoDestinationURL.absoluteString;
+    response[@"type"] = [ImagePickerUtils getFileTypeFromUrl:videoDestinationURL];
+    response[@"fileSize"] = [ImagePickerUtils getFileSizeFromUrl:videoDestinationURL];
+    response[@"width"] = @(dimentions.width);
+    response[@"height"] = @(dimentions.height);
+    
+    if(phAsset){
+        response[@"timestamp"] = [self getDateTimeInUTC:phAsset.creationDate];
+        response[@"id"] = phAsset.localIdentifier;
+        NSArray *resources = [PHAssetResource assetResourcesForAsset:phAsset];
+        NSString *orgFilename = ((PHAssetResource*)resources[0]).originalFilename;
+        response[@"originalName"] = orgFilename;
+        // Add more extra data here ...
     }
 
     return response;
@@ -445,6 +409,7 @@ CGImagePropertyOrientation CGImagePropertyOrientationForUIImageOrientation(UIIma
 
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<NSString *,id> *)info
 {
+    
     dispatch_block_t dismissCompletionBlock = ^{
         NSMutableArray<NSDictionary *> *assets = [[NSMutableArray alloc] initWithCapacity:1];
         PHAsset *asset = nil;
@@ -511,6 +476,8 @@ CGImagePropertyOrientation CGImagePropertyOrientationForUIImageOrientation(UIIma
 
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results API_AVAILABLE(ios(14))
 {
+    
+    
     [picker dismissViewControllerAnimated:YES completion:nil];
 
     if (photoSelected == YES) {
@@ -532,6 +499,7 @@ CGImagePropertyOrientation CGImagePropertyOrientationForUIImageOrientation(UIIma
     }
 
     [results enumerateObjectsUsingBlock:^(PHPickerResult *result, NSUInteger index, BOOL *stop) {
+        
         PHAsset *asset = nil;
         NSItemProvider *provider = result.itemProvider;
 
@@ -551,7 +519,7 @@ CGImagePropertyOrientation CGImagePropertyOrientationForUIImageOrientation(UIIma
                 identifier = @"public.jpeg";
             }
 
-            [provider loadFileRepresentationForTypeIdentifier:identifier completionHandler:^(NSURL * _Nullable url, NSError * _Nullable error) {
+            [provider loadInPlaceFileRepresentationForTypeIdentifier:identifier completionHandler:^(NSURL * _Nullable url, BOOL inPlace, NSError * _Nullable error) {
                 NSData *data = [[NSData alloc] initWithContentsOfURL:url];
                 UIImage *image = [[UIImage alloc] initWithData:data];
                 
@@ -560,9 +528,21 @@ CGImagePropertyOrientation CGImagePropertyOrientationForUIImageOrientation(UIIma
             }];
         } else if ([provider hasItemConformingToTypeIdentifier:(NSString *)kUTTypeMovie]) {
             [provider loadFileRepresentationForTypeIdentifier:(NSString *)kUTTypeMovie completionHandler:^(NSURL * _Nullable url, NSError * _Nullable error) {
-                NSDictionary *mappedAsset = [self mapVideoToAsset:url phAsset:asset error:nil];
-                if (nil != mappedAsset) {
-                    assets[index] = mappedAsset;
+                if (error) {
+                    dispatch_group_leave(completionGroup);
+                    return;
+                }
+
+                if (url) {
+
+                    NSDictionary *mappedAsset = [self mapVideoToAsset:url phAsset:asset error:nil];
+                    if (mappedAsset != nil) {
+                        assets[index] = mappedAsset;
+                    } else {
+                        NSLog(@"Failed to map video asset.");
+                    }
+                } else {
+                    NSLog(@"Video URL is nil.");
                 }
                 dispatch_group_leave(completionGroup);
             }];
